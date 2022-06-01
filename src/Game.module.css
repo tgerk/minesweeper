@@ -1,0 +1,60 @@
+.header {
+  background-color: #282c34;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(10px + 2vmin);
+  color: white;
+}
+
+.Game {
+  text-align: center;
+}
+
+.GameGrid {
+  display: flex;
+  flex-direction: column;
+}
+
+.GameRow {
+  display: flex;
+  flex-direction: row;
+}
+
+.GameCell {
+  width: 30px;
+  height: 30px;
+  border: 2px white solid;
+  padding: 6px;
+  margin: 2px;
+  color: red;
+  display: flex;
+  align-content: center;
+  justify-content: center;
+  position: relative;
+}
+
+.hidden ::after {
+  postion: absolute;
+  left: 0; top: 0;
+  width: 30px;
+  height: 30px;
+  border-radius: 2px;
+  content: "";
+  background: pink;
+}
+
+.mine {
+  background-color:red;
+}
+
+@keyframes logo-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
