@@ -1,38 +1,38 @@
 export type GridCoord = [number, number]
 
+const digest = ([i, j]: GridCoord) => (i << 16) | j % 0x10000,
+  coord = (digest: number): GridCoord => [digest >> 16, digest & 0xffff]
+
 // can't have a set of GridCoord tuples, identity check compares Array identity
 // use Proxy to digest the GridCoord into a primitive that is compared by value
 export default class GridCoordSet extends Set<GridCoord> {
   constructor(coords?: Iterable<GridCoord>) {
     super()
 
-    function _add(this: Set<number>, [i, j]: GridCoord) {
-      return this.add((j << 16) | i)
+    function _add(this: Set<number>, coord: GridCoord) {
+      return this.add(digest(coord))
     }
-    function _has(this: Set<number>, [i, j]: GridCoord) {
-      return this.has((j << 16) | i)
+    function _has(this: Set<number>, coord: GridCoord) {
+      return this.has(digest(coord))
     }
-    function _delete(this: Set<number>, [i, j]: GridCoord) {
-      return this.delete((j << 16) | i)
+    function _delete(this: Set<number>, coord: GridCoord) {
+      return this.delete(digest(coord))
     }
     function _forEach(this: Set<number>, fn: (entry: GridCoord) => void): void {
-      return this.forEach((digest: number) =>
-        fn([digest >> 16, digest & 0xffff])
-      )
+      return this.forEach((digest: number) => fn(coord(digest)))
     }
     function* _entries(this: Set<number>) {
       for (const digest of this) {
-        yield[[digest >> 16, digest & 0xffff], [digest >> 16, digest & 0xffff]]
+        yield [coord(digest), coord(digest)]
       }
     }
     function* _values(this: Set<number>) {
       for (const digest of this) {
-        yield [digest >> 16, digest & 0xffff]
+        yield coord(digest)
       }
     }
 
-    const p = new Proxy(this as unknown as Set<number>,
-    {
+    const p = new Proxy(this as unknown as Set<number>, {
       get(s: Set<number>, prop: PropertyKey, ...rest: any[]) {
         switch (prop) {
           case "add":
