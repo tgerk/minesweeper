@@ -5,6 +5,41 @@ import GridCoordSet, { GridCoord } from "./utils/GridCoord"
 
 import styles from "./Game.module.css"
 
+const flagClass = styles.flag
+
+// many modes of play regarding first click and mouse operations
+// I recall versions where the board first appears with an opened empty space,
+//  probably based on a monte carlo search for an empty cell
+// The first click on a virgin board could be event that generates mines, and
+//  delay computation of content+style of played cell until it is played
+// It's unfriendly if first click on virgin board hits a mine: iterate generating
+//  mines until the first-selected cell is in an empty space
+// Either way, opening empty space on prior to start or on first click takes away
+//  from the opening drama--let user do her own monte carlo
+
+// elementary operations:
+//  set/remove flag
+//  play a cell (if unplayed and unflagged)
+//  play neighbor cells (if played & neighbor flags == neighbor mines)
+
+// story:
+//  on a new board, no cells have been played
+//  first click causes the mines matrix to rotate until the selected cell is empty
+//   the first click will play a cell (obviously not yet played or flagged) that
+//   opens an empty space
+//  thence:
+//   clicks on unplayed cell add / remove flag
+//   dblClick will play the cell regardless if previously flagged or un-flagged
+//   click on played cell will compare neighbor flags to neighbor mines & if these
+//    match will play unplayed & unflagged neighbors
+
+// having issues with alt/ctrl/meta/shift/right clicking
+// events mousedown, click, dblclick need careful mapping
+// when there's a dblClick handler, need a timer to delay and potentially
+//  cancel an onClick action if dblClick occurs within timeout; does preventDefault
+//  have anything to do with it?
+
+// ignore opening move and dblClick complexity for now!
 export default function Game(props: {
   x: number //across
   y: number //down
@@ -36,8 +71,8 @@ export default function Game(props: {
     isFlagged = ([i, j]: GridCoord) =>
       (
         gridRef.childNodes[i].childNodes[j] as HTMLDivElement
-      ).classList.contains("flag"),
-    isPlayed = ([i, j]: GridCoord) => playedCells()[i][j],
+      ).classList.contains(flagClass),
+    isPlayed = ([i, j]: GridCoord) => playedCells()?.[i][j],
     getNeighbors = (coord: GridCoord): GridCoord[] =>
       Array.from(
         // look Mom, a generator!
@@ -60,41 +95,51 @@ export default function Game(props: {
       getNeighbors(coord).filter(([i, j]) =>
         (
           gridRef.childNodes[i].childNodes[j] as HTMLDivElement
-        ).classList.contains("flag")
+        ).classList.contains(flagClass)
       ).length,
     countNeighborMines = (coord: GridCoord): number =>
       getNeighbors(coord).filter((neighbor) => mines.has(neighbor)).length
 
   function selectCell([i, j]: GridCoord, event: MouseEvent): void {
-    console.debug("selectCell", [i, j], event)
     const eventTarget = event.target as Element
-    if (
-      event.altKey ||
-      event.ctrlKey ||
-      event.metaKey ||
-      event.shiftKey ||
-      event.button > 0
-    ) {
-      return flagCell(event)
+    
+    // short-click plays non-flagged, long-click sets flag only
+    const doPlayCell = () => playCell([i, j], eventTarget)
+    if (!eventTarget.classList.contains(flagClass)) {
+      eventTarget.addEventListener("click", doPlayCell)
     }
 
-    const doPlayCell = () => playCell([i, j], eventTarget)
-    eventTarget.addEventListener("click", doPlayCell)
     setTimeout(() => {
       eventTarget.removeEventListener("click", doPlayCell)
-    }, 800)
+
+      eventTarget.classList.toggle(flagClass)
+      props.setFlags?.((count) =>
+        eventTarget.classList.contains(flagClass) ? --count : ++count
+      )
+    }, 200)  // TODO: make this tunable!
+  }
+
+  function clickPlayedCell([i, j]: GridCoord, event: MouseEvent): void {
+    // highlight neighbors (timeout)
+    const mines = countNeighborMines([i, j]),
+      flags = countNeighborFlags([i, j])
+    if (mines == flags) {
+      playNeighborCells([i, j])
+    } else {
+      console.log("clickPlayedCell, mines", mines, "not equal to flags", flags)
+    }
   }
 
   function flagCell(event: MouseEvent) {
     const eventTarget = event.target as Element
-    eventTarget.classList.toggle("flag")
+    eventTarget.classList.toggle(flagClass)
     props.setFlags?.((count) =>
-      eventTarget.classList.contains("flag") ? --count : ++count
+      eventTarget.classList.contains(flagClass) ? --count : ++count
     )
   }
 
   function playCell([i, j]: GridCoord, element: Element) {
-    if (element.classList.contains("flag") || playedCells()[i][j]) {
+    if (element.classList.contains(flagClass) || playedCells()[i][j]) {
       return
     }
 
@@ -114,13 +159,6 @@ export default function Game(props: {
         playNeighborCells([i, j])
       }
     })
-  }
-
-  function selectPlayedCell([i, j]: GridCoord, event: MouseEvent): void {
-    console.debug("selectPlayedCell", [i, j], event)
-    if (countNeighborMines([i, j]) == countNeighborFlags([i, j])) {
-      playNeighborCells([i, j])
-    }
   }
 
   function playNeighborCells(start: GridCoord): GridCoordSet | undefined {
@@ -180,21 +218,18 @@ export default function Game(props: {
               .fill(null)
               .map((_, j) => (
                 <Show
-                  when={playedCells()[i][j] || gameOver()}
+                  when={playedCells()?.[i][j] || gameOver()}
                   fallback={
                     <div
-                      onDblClick={flagCell}
                       onMouseDown={[selectCell, [i, j]]}
-                      class={`${styles.GameCell} ${styles.GameCellHidden}`}
-                    >
-                      ?
-                    </div>
+                      class={`${styles.GameCell} ${styles.hidden}`}
+                    />
                   }
                 >
                   <div
-                    onDblClick={[selectPlayedCell, [i, j]]}
+                    onClick={[clickPlayedCell, [i, j]]}
                     class={`${styles.GameCell} ${
-                      styles[`${countNeighborMines([i, j])}_neighbors`]
+                      styles[`neighbors_${countNeighborMines([i, j])}`]
                     }`}
                     classList={{
                       ...(gameOver() && {
@@ -202,7 +237,7 @@ export default function Game(props: {
                       }),
                     }}
                   >
-                    {countNeighborMines([i, j]) || " "}
+                    {countNeighborMines([i, j]) || ""}
                   </div>
                 </Show>
               ))}

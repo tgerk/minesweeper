@@ -13,8 +13,27 @@ const set1 = new GridCoordSet(),
       })
   )
 
-set2.clear()
-console.info(set3.size)
+for (const x of set1.values()) {
+  console.info(x)
+}
+
+for (const x of set2.values()) {
+  console.info(x)
+}
+for (const [i,j] of set2) {
+  console.info([i,j])
+}
+// set2.clear()
+// for (const x of set2.values()) {
+//   console.info(x)
+// }
+// set2.add([0,10])
+// for (const x of set2.values()) {
+//   console.info(x)
+// }
+// console.log(Array.from(set2.values()))
+
+// console.info(set3.size)
 for (const x of set3.entries()) {
   // console.info(x)
 }

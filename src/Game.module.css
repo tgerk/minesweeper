@@ -29,25 +29,54 @@
   border: 2px white solid;
   padding: 6px;
   margin: 2px;
-  color: red;
+  color: black;
+  font-weight: bold;
   display: flex;
   align-content: center;
   justify-content: center;
   position: relative;
 }
 
-.hidden ::after {
-  postion: absolute;
-  left: 0; top: 0;
-  width: 30px;
-  height: 30px;
-  border-radius: 2px;
-  content: "";
-  background: pink;
+.hidden {
+  background-color: #222;
+}
+
+.flag {
+ background-color: lightpink;
+}
+
+.neighbors_0 {
+  background-color: slategray;
+}
+.neighbors_1 {
+  background-color: blue;
+}
+.neighbors_2 {
+  background-color: green;
+}
+.neighbors_3 {
+  background-color: red;
+}
+.neighbors_4 {
+  background-color: purple;
+}
+.neighbors_5 {
+  background-color: slateblue;
+}
+.neighbors_6 {
+  background-color: limegreen;
+}
+.neighbors_7 {
+  background-color: gray;
+}
+.neighbors_8 {
+  background-color: black;
 }
 
 .mine {
-  background-color:red;
+  background-color: black;
+  border-radius: 50%;
+  border-color: red;
 }
 
 @keyframes logo-spin {
