@@ -38,7 +38,7 @@
 }
 
 .hidden {
-  background-color: #222;
+  background-color: slategray;
 }
 
 .flag {
@@ -46,7 +46,7 @@
 }
 
 .neighbors_0 {
-  background-color: slategray;
+  background-color: #222;
 }
 .neighbors_1 {
   background-color: blue;

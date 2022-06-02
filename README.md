@@ -1,5 +1,12 @@
 ## Usage
 
+You want to play minesweeper.  It's your favorite passtime.  Here your problem is solved.
+
+This is a SolidJS app.  It's in github, but (since you're reading this) might have gotten a tarball.  Clone it (or unpack it), install using your dearest package manager (npm, yarn, or this new-fangled thing).  Then npm start & you're in dev mode.
+
+I'll look into github.io hosting.
+
+## Background
 Those templates dependencies are maintained via [pnpm](https://pnpm.io) via `pnpm up -Lri`.
 
 This is the reason you see a `pnpm-lock.yaml`. That being said, any package manager will work. This file can be safely be removed once you clone a template.

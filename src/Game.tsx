@@ -1,4 +1,4 @@
-import { batch, createSignal, Show } from "solid-js"
+import { batch, createEffect, createSignal, Show } from "solid-js"
 import type { Setter } from "solid-js"
 
 import GridCoordSet, { GridCoord } from "./utils/GridCoord"
@@ -44,6 +44,7 @@ export default function Game(props: {
   x: number //across
   y: number //down
   mines: number
+  sensitivity?: number // milliseconds, move this to user context
   setFlags?: Setter<number>
 }) {
   let gridRef: HTMLDivElement
@@ -56,14 +57,13 @@ export default function Game(props: {
   // 3) for flagging cells, use classes on DOM elements
   //  fairly old school, performant?
   // 4) recounting neighboring mines is surely non-performant!
-  const mines = new GridCoordSet(
-      Array(Math.floor(props.x * props.y * props.mines) + 1)
-        .fill(true)
-        .map(() => {
-          const mine = Math.floor(Math.random() * props.x * props.y)
-          return [mine % props.y, Math.floor(mine / props.x)]
-        })
-    ),
+  const mineCells = Array(Math.floor(props.x * props.y * props.mines) + 1)
+      .fill(true)
+      .map(() => {
+        const mine = Math.floor(Math.random() * props.x * props.y)
+        return [Math.floor(mine / props.x), mine % props.x] as GridCoord
+      }),
+    mines = new GridCoordSet(mineCells),
     [playedCells, setCells] = createSignal<boolean[][]>(
       Array(props.y).fill(Array(props.x).fill(false))
     ),
@@ -101,62 +101,59 @@ export default function Game(props: {
       getNeighbors(coord).filter((neighbor) => mines.has(neighbor)).length
 
   function selectCell([i, j]: GridCoord, event: MouseEvent): void {
-    const eventTarget = event.target as Element
-    
-    // short-click plays non-flagged, long-click sets flag only
-    const doPlayCell = () => playCell([i, j], eventTarget)
+    // short-click plays non-flagged, long-click only sets flag
+    // don't set the flag if the cell was played:  either the onClick
+    //  handler or the set flag timeout needs to cleanup the other
+    const eventTarget = event.target as Element,
+      doPlayCell = () => {
+        clearTimeout(setFlagTimeout)
+        eventTarget.removeEventListener("click", doPlayCell)
+        playCell([i, j], eventTarget)
+      },
+      setFlagTimeout = setTimeout(() => {
+        eventTarget.removeEventListener("click", doPlayCell)
+
+        eventTarget.classList.toggle(flagClass)
+        props.setFlags?.((count) =>
+          eventTarget.classList.contains(flagClass) ? --count : ++count
+        )
+      }, props.sensitivity ?? 200)
+
     if (!eventTarget.classList.contains(flagClass)) {
       eventTarget.addEventListener("click", doPlayCell)
     }
-
-    setTimeout(() => {
-      eventTarget.removeEventListener("click", doPlayCell)
-
-      eventTarget.classList.toggle(flagClass)
-      props.setFlags?.((count) =>
-        eventTarget.classList.contains(flagClass) ? --count : ++count
-      )
-    }, 200)  // TODO: make this tunable!
   }
 
-  function clickPlayedCell([i, j]: GridCoord, event: MouseEvent): void {
-    // highlight neighbors (timeout)
-    const mines = countNeighborMines([i, j]),
-      flags = countNeighborFlags([i, j])
-    if (mines == flags) {
-      playNeighborCells([i, j])
-    } else {
-      console.log("clickPlayedCell, mines", mines, "not equal to flags", flags)
-    }
-  }
-
-  function flagCell(event: MouseEvent) {
-    const eventTarget = event.target as Element
-    eventTarget.classList.toggle(flagClass)
-    props.setFlags?.((count) =>
-      eventTarget.classList.contains(flagClass) ? --count : ++count
-    )
-  }
-
-  function playCell([i, j]: GridCoord, element: Element) {
-    if (element.classList.contains(flagClass) || playedCells()[i][j]) {
+  function clickPlayedCell(cell: GridCoord, event: MouseEvent): void {
+    if (countNeighborMines(cell) != countNeighborFlags(cell)) {
+      console.log("neighboring mines not equal count to flags")
       return
     }
 
-    if (mines.has([i, j])) {
+    playNeighborCells(cell)
+  }
+
+  function playCell(cell: GridCoord, element: Element) {
+    if (element.classList.contains(flagClass) || !isPlayed(cell)) {
+      return
+    }
+
+    if (mines.has(cell)) {
       alert("You Lose")
       setGameOver(true)
       return
     }
 
     batch(() => {
-      setCells((cells) =>
-        cells.map((row, y) =>
+      setCells((cells) => {
+        const [i, j] = cell
+        return cells.map((row, y) =>
           y == i ? row.map((cell, x) => (x == j ? true : cell)) : row
         )
-      )
-      if (!countNeighborMines([i, j])) {
-        playNeighborCells([i, j])
+      })
+
+      if (!countNeighborMines(cell)) {
+        playNeighborCells(cell)
       }
     })
   }
@@ -207,7 +204,7 @@ export default function Game(props: {
   }
 
   props.setFlags?.(mines.size)
-
+  
   return (
     <div class={styles.GameGrid} ref={gridRef!}>
       {Array(props.y)

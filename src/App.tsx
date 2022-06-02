@@ -9,7 +9,7 @@ const App: Component = () => {
     <div class={styles.App}>
       <header class={styles.header}>
         <p>remaining flags: {flags()}</p>
-        <Game x={12} y={16} mines={0.2} setFlags={setFlags} />
+        <Game x={8} y={10} mines={0.1} setFlags={setFlags} />
       </header>
       <p>
         √ Minesweeper needs a NxM grid and a difficulty (i.e. probability of
@@ -29,8 +29,9 @@ const App: Component = () => {
       </ul>
       <p>onClick in the table, gameplay proceeds:</p>
       <ul>
-        <li>set/remove a flag on a hidden cell</li>
-        <li>click to expose a cell</li>
+        <li>√set/remove a flag on a hidden cell --hold mouse down til flag appears</li>
+        <li>√click (quickly) to expose a cell</li>
+        <li>√click exposed cell to play its neighbors (if </li>
         <li>expose a mine: expose all cells</li>
         <li>
           expose a count: expose cell, if count is zero run a spiral search to
