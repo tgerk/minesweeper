@@ -1,19 +1,17 @@
-import { createEffect, createSignal, onMount, Show } from "solid-js"
+import { createSignal, onMount, Show } from "solid-js"
+import { render } from "solid-js/web"
 
 import Game from "./Game"
-import { GameOverEvent } from "./GameOverEvent"
+import { GameOverEvent } from "./Game"
 
 import styles from "./App.module.css"
 
 export default function App() {
-  const [flags, setFlags] = createSignal(0)
-  const [winOrLoss, setWinOrLoss] = createSignal<boolean>()
+  const [winOrLoss, setWinOrLoss] = createSignal<boolean>(),
+    [flags, setFlags] = createSignal(0)
 
-  // couldn't both export and keep local ref in component
-  // fallback to a custom event handler
-  // figured out the Typescript formalities: extend interface JSX.CustomEvents
-  // then set the event handler attribute on a standard HTML element
-  // (if passing as attribute of a component, author needs to wire it up)
+  onMount(newGame)
+
   function gameOver(event: GameOverEvent) {
     const {
       detail: { won },
@@ -21,20 +19,31 @@ export default function App() {
     setWinOrLoss(won)
   }
 
-  createEffect(() => console.log(winOrLoss()))
+  let dispose: ReturnType<typeof render>
+  function newGame() {
+    setWinOrLoss(undefined)
+    dispose?.()
+    dispose = render(
+      () => <Game x={12} y={16} mines={0.17} setFlags={setFlags} />,
+      document.getElementById("game-holder") as HTMLElement
+    )
+  }
 
   return (
-    <div class={styles.App}>
-      <Show when={winOrLoss() !== undefined}>
-        {winOrLoss() ? (
-          <span>WINNER, WINNER, CHICKEN DINNER</span>
-        ) : (
-          <span>waa-waaa</span>
-        )}
-      </Show>
-      <header class={styles.header} on:Game-Over={gameOver}>
-        <p>remaining flags: {flags()}</p>
-        <Game x={8} y={10} mines={0.1} setFlags={setFlags} />
+    <div class={styles.App} on:Game-Over={gameOver}>
+      <header class={styles.header}>
+        <button onClick={newGame}>NEW GAME</button>
+        <Show
+          when={winOrLoss() !== undefined}
+          fallback={<p>remaining flags: {flags()}</p>}
+        >
+          {winOrLoss() ? (
+            <span>WINNER, WINNER, CHICKEN DINNER</span>
+          ) : (
+            <span>waa-waaa</span>
+          )}
+        </Show>
+        <div id="game-holder"></div>
       </header>
       <p>
         √ Minesweeper needs a NxM grid and a difficulty (i.e. probability of

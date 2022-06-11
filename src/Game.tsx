@@ -1,20 +1,43 @@
 import {
   batch,
-  Component,
   createEffect,
   createSignal,
-  JSX,
+  Index,
+  on,
   onMount,
   Show,
 } from "solid-js"
 import type { Setter } from "solid-js"
+import type {} from "solid-js"
 
 import GridCoordSet, { GridCoord } from "./utils/GridCoord"
-import { GameOverEvent } from "./GameOverEvent"
 
 import styles from "./Game.module.css"
 
 const flagClass = styles.flag
+
+// define a custom event emitted from the component
+const GAME_OVER_EVENT_TYPE = "Game-Over"
+export class GameOverEvent extends CustomEvent<{ won: boolean }> {
+  type!: "Game-Over"
+  detail!: { won: boolean }
+  constructor(won: boolean) {
+    super(GAME_OVER_EVENT_TYPE, {
+      bubbles: true, // simply set on:Game-Over attribute (or addEventListener) on a containing DOM element
+      composed: true, // cross shadow-DOM boundary
+      detail: { won },
+    })
+  }
+}
+
+// setup event handler attribute on:GameOver --FOR STANDARD HTML ELEMENTS
+declare module "solid-js" {
+  namespace JSX {
+    interface CustomEvents {
+      GAME_OVER_EVENT_TYPE: GameOverEvent
+    }
+  }
+}
 
 // many modes of play regarding first click and mouse operations
 // I recall versions where the board first appears with an opened empty space,
@@ -25,6 +48,7 @@ const flagClass = styles.flag
 //  mines until the first-selected cell is in an empty space
 // Either way, opening empty space on prior to start or on first click takes away
 //  from the opening drama--let user do her own monte carlo
+// (ignore opening move and dblClick complexity for now!)
 
 // elementary operations:
 //  set/remove flag
@@ -43,56 +67,40 @@ const flagClass = styles.flag
 //    match will play unplayed & unflagged neighbors
 
 // having issues with alt/ctrl/meta/shift/right clicking
-// events mousedown, click, dblclick need careful mapping
+// events mousedown, click, dblclick need careful mapping?
 // when there's a dblClick handler, need a timer to delay and potentially
 //  cancel an onClick action if dblClick occurs within timeout; does preventDefault
 //  have anything to do with it?
 
-// ignore opening move and dblClick complexity for now!
-export default function Game(
-  props: {
-    x: number //across
-    y: number //down
-    mines: number
-    sensitivity?: number // milliseconds, move this to user context
-    setFlags?: Setter<number>
-  }
-) {
+// I've used a variety of state-strategies:
+// 1) to indicate played cells, use a double-indexed 2-d array of booleans (suits the Show component)
+// 2) for bombs, use a GridCoordSet utility class (very typescript-y & OO)
+// 3) for flagging cells, use classes on DOM elements (fairly old school, performant? esp. counting neighboring mines??)
+//
+// I've injected a state-modifier
+// I've exported a custom event
+export default function Game(props: {
+  x: number //across
+  y: number //down
+  mines: number
+  sensitivity?: number // milliseconds, move this to user context
+  setFlags?: Setter<number>
+}) {
   let gridRef: HTMLDivElement //HTMLGameElement
 
-  // I've used a variety of accessor methods:
-  // 1) for played cells, use a double-indexed 2-d array of booleans
-  //  suits the Show component
-  // 2) for bombs, use a GridCoordSet utility class
-  //  very typescript-y & OO
-  // 3) for flagging cells, use classes on DOM elements
-  //  fairly old school, performant?
-  // 4) recounting neighboring mines is surely non-performant!
-  const mineCells = Array(Math.floor(props.x * props.y * props.mines) + 1)
-      .fill(true)
-      .map(() => {
-        const mine = Math.floor(Math.random() * props.x * props.y)
-        return [Math.floor(mine / props.x), mine % props.x] as GridCoord
-      }),
-    mines = new GridCoordSet(mineCells),
-    [playedCells, setCells] = createSignal<boolean[][]>(
+  // pre-empt "bad things" if properties are changed, container should render a new Game component
+  on(
+    () => [props.x, props.y, props.mines],
+    () => {
+      throw Error("Game properties should be static for life of component")
+    }
+  )
+
+  // pertaining to cells
+  const [cells, setCells] = createSignal<boolean[][]>(
       Array(props.y).fill(Array(props.x).fill(false))
     ),
-    [gameOver, setGameOver] = createSignal<boolean | null>(null),
-    isFlagged = ([i, j]: GridCoord) =>
-      (
-        gridRef.childNodes[i].childNodes[j] as HTMLDivElement
-      ).classList.contains(flagClass),
-    isPlayed = ([i, j]: GridCoord) => playedCells()?.[i][j],
-    checkMine = (cell: GridCoord) => {
-      if (mines.has(cell)) {
-        setGameOver(true)
-        gridRef.dispatchEvent(new GameOverEvent(false))
-        return true
-      }
-
-      return false
-    },
+    isPlayed = ([i, j]: GridCoord) => cells()?.[i][j],
     getNeighbors = (coord: GridCoord): GridCoord[] =>
       Array.from(
         // look Mom, a generator!
@@ -110,75 +118,74 @@ export default function Game(
             if (i + 1 < props.y) yield [i + 1, j + 1]
           }
         })(coord)
+      )
+
+  // pertaining to flags
+  const toggleFlag = (cell: GridCoord | Element) =>
+      props.setFlags?.((count) =>
+        (cell instanceof Element
+          ? cell
+          : (gridRef.childNodes[cell[0]].childNodes[cell[1]] as Element)
+        ).classList.toggle(flagClass)
+          ? --count
+          : ++count
       ),
+    isFlagged = (cell: GridCoord | Element) =>
+      (cell instanceof Element
+        ? cell
+        : (gridRef.childNodes[cell[0]].childNodes[cell[1]] as Element)
+      ).classList.contains(flagClass),
     countNeighborFlags = (coord: GridCoord): number =>
       getNeighbors(coord).filter(([i, j]) =>
         (
           gridRef.childNodes[i].childNodes[j] as HTMLDivElement
         ).classList.contains(flagClass)
-      ).length,
+      ).length
+  onMount(() => {
+    props.setFlags?.(mines.size)
+  })
+
+  // pertaining to mines
+  const mines = new GridCoordSet(
+      Array(Math.floor(props.x * props.y * props.mines) + 1)
+        .fill(true)
+        .map(() => {
+          const mine = Math.floor(Math.random() * props.x * props.y)
+          return [Math.floor(mine / props.x), mine % props.x] as GridCoord
+        })
+    ),
+    checkMine = (coord: GridCoord) => {
+      if (mines.has(coord)) {
+        setGameOver(true)
+        gridRef.dispatchEvent(new GameOverEvent(false))
+        return true
+      }
+
+      return false
+    },
     countNeighborMines = (coord: GridCoord): number =>
       getNeighbors(coord).filter((neighbor) => mines.has(neighbor)).length
 
-  function selectCell([i, j]: GridCoord, event: MouseEvent): void {
-    // short-click plays non-flagged, long-click only sets flag
-    // don't set the flag if the cell was played:  either the onClick
-    //  handler or the set flag timeout needs to cleanup the other
-    const eventTarget = event.target as Element,
-      setFlagTimeout = setTimeout(() => {
-        props.setFlags?.((count) =>
-          eventTarget.classList.toggle(flagClass) ? --count : ++count
-        )
-
-        eventTarget.removeEventListener("click", doPlayCell)
-      }, props.sensitivity ?? 200),
-      doPlayCell = () => {
-        clearTimeout(setFlagTimeout)
-
-        batch(() => {
-          playCell([i, j], eventTarget)
-        })
-
-        eventTarget.removeEventListener("click", doPlayCell)
-      }
-
-    eventTarget.addEventListener("click", doPlayCell)
-  }
-
-  function clickPlayedCell(cell: GridCoord, event: MouseEvent): void {
-    if (countNeighborMines(cell) != countNeighborFlags(cell)) {
-      console.log("neighboring mines not equal count to flags")
-      return
-    }
-
-    batch(() => {
-      playNeighborCells(cell)
-    })
-  }
-
-  function playCell(cell: GridCoord, element: Element) {
-    if (
-      element.classList.contains(flagClass) ||
-      isPlayed(cell) ||
-      checkMine(cell)
-    ) {
+  // pertaining to play
+  function playCell(coord: GridCoord, element: Element) {
+    if (isFlagged(element) || isPlayed(coord) || checkMine(coord)) {
       return
     }
 
     setCells((cells) => {
-      const [i, j] = cell
+      const [i, j] = coord
       return cells.map((row, y) =>
         y == i ? row.map((cell, x) => (x == j ? true : cell)) : row
       )
     })
 
-    if (!countNeighborMines(cell)) {
-      playNeighborCells(cell)
+    if (!countNeighborMines(coord)) {
+      playNeighborCells(coord)
     }
   }
 
   function playNeighborCells(start: GridCoord): GridCoordSet | undefined {
-    const changedCells = new GridCoordSet(),
+    const playedCells = new GridCoordSet(),
       search = [getNeighbors(start)]
 
     let radius = 1
@@ -190,15 +197,15 @@ export default function Game(
             return
           }
 
-          changedCells.add(cell)
+          playedCells.add(cell)
 
           if (!countNeighborMines(cell)) {
             getNeighbors(cell)
               .filter(
                 (neighbor) =>
-                  !changedCells.has(neighbor) &&
                   !isFlagged(cell) &&
-                  !isPlayed(cell)
+                  !isPlayed(cell) &&
+                  !playedCells.has(neighbor)
               )
               .forEach((neighbor) => {
                 nextSearch.add(neighbor)
@@ -211,7 +218,7 @@ export default function Game(
     } while (search[0].length)
 
     setCells((played) => {
-      for (const [i, j] of changedCells) {
+      for (const [i, j] of playedCells) {
         played = played.map((row, y) =>
           y !== i ? row : row.map((cell, x) => (x !== j ? cell : true))
         )
@@ -220,58 +227,103 @@ export default function Game(
     })
   }
 
-  const cellsToWin = props.x * props.y - mines.size
+  // pertaining to end-of-game
+  const [gameOver, setGameOver] = createSignal<boolean | null>(null)
   createEffect(() => {
     if (
-      cellsToWin ==
-      playedCells().reduce(
-        (played, row) => played + row.filter(Boolean).length,
-        0
-      )
+      mines.size +
+        cells().reduce(
+          (played, row) => played + row.filter(Boolean).length,
+          0
+        ) ==
+      props.x * props.y
     ) {
       gridRef.dispatchEvent(new GameOverEvent(true))
     }
   })
 
-  onMount(() => {
-    props.setFlags?.(mines.size)
-  })
+  // pertaining to UI
+  function UnplayedCell({ i, j }: { i: number; j: number }) {
+    function handler([i, j]: GridCoord, event: MouseEvent): void {
+      // short-click plays non-flagged or removes flag, long-click only sets flag
+      // the click handler or the set flag timeout needs to cleanup the other
+      const eventTarget = event.target as Element
+      if (isFlagged(eventTarget)) {
+        toggleFlag(eventTarget)
+        return
+      }
+
+      const setFlagTimeout = setTimeout(() => {
+          eventTarget.removeEventListener("click", doPlayCell)
+          toggleFlag(eventTarget)
+        }, props.sensitivity ?? 200),
+        doPlayCell = () => {
+          clearTimeout(setFlagTimeout)
+
+          batch(() => {
+            playCell([i, j], eventTarget)
+          })
+
+          eventTarget.removeEventListener("click", doPlayCell)
+        }
+
+      eventTarget.addEventListener("click", doPlayCell)
+    }
+
+    return (
+      <div
+        onMouseDown={[handler, [i, j]]}
+        class={`${styles.GameCell} ${styles.hidden}`}
+      />
+    )
+  }
+
+  function PlayedCell({ i, j }: { i: number; j: number }) {
+    function handler(cell: GridCoord, event: MouseEvent): void {
+      if (countNeighborMines(cell) != countNeighborFlags(cell)) {
+        return
+      }
+
+      batch(() => {
+        playNeighborCells(cell)
+      })
+    }
+
+    return (
+      <div
+        onClick={[handler, [i, j]]}
+        class={`${styles.GameCell} ${
+          styles[`neighbors_${countNeighborMines([i, j])}`]
+        }`}
+        classList={{
+          ...(gameOver() && {
+            [styles.mine]: mines.has([i, j]),
+          }),
+        }}
+      >
+        {countNeighborMines([i, j]) || ""}
+      </div>
+    )
+  }
 
   return (
-    <div class={styles.GameGrid} ref={gridRef!}>
-      {Array(props.y)
-        .fill(null)
-        .map((_, i) => (
+    <div ref={gridRef!} class={styles.GameGrid}>
+      <Index each={cells()} fallback={<div>Loading...</div>}>
+        {(row, i) => (
           <div class={styles.GameRow}>
-            {Array(props.x)
-              .fill(null)
-              .map((_, j) => (
+            <Index each={row()}>
+              {(_, j) => (
                 <Show
-                  when={playedCells()?.[i][j] || gameOver()}
-                  fallback={
-                    <div
-                      onMouseDown={[selectCell, [i, j]]}
-                      class={`${styles.GameCell} ${styles.hidden}`}
-                    />
-                  }
+                  when={cells()?.[i][j] || gameOver()}
+                  fallback={<UnplayedCell i={i} j={j} />}
                 >
-                  <div
-                    onClick={[clickPlayedCell, [i, j]]}
-                    class={`${styles.GameCell} ${
-                      styles[`neighbors_${countNeighborMines([i, j])}`]
-                    }`}
-                    classList={{
-                      ...(gameOver() && {
-                        [styles.mine]: mines.has([i, j]),
-                      }),
-                    }}
-                  >
-                    {countNeighborMines([i, j]) || ""}
-                  </div>
+                  <PlayedCell i={i} j={j} />
                 </Show>
-              ))}
+              )}
+            </Index>
           </div>
-        ))}
+        )}
+      </Index>
     </div>
   )
 }
