@@ -1,10 +1,10 @@
 export type GridCoord = [number, number]
 
+// reversible digest between a coordinate tuple and a primitive value
+// Set<[x,y]> will not work because tuples are compared by object reference, not value (silly Javascript)
 const digest = ([i, j]: GridCoord) => (i << 16) | j % 0x10000,
   coord = (digest: number): GridCoord => [digest >> 16, digest & 0xffff]
 
-// can't have a set of GridCoord tuples, identity check compares Array identity
-// use Proxy to digest the GridCoord into a primitive that is compared by value
 export default class GridCoordSet extends Set<GridCoord> {
   constructor(coords?: Iterable<GridCoord>) {
     super()
@@ -63,6 +63,6 @@ export default class GridCoordSet extends Set<GridCoord> {
       }
     }
 
-    return p
+    return p // constructor returns a different object! (wow, Javascript)
   }
 }
