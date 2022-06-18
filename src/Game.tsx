@@ -8,9 +8,9 @@ import {
   Show,
 } from "solid-js"
 import type { Setter } from "solid-js"
-import type {} from "solid-js"
 
-import GridCoordSet, { GridCoord } from "./utils/GridCoord"
+import { GridCoordSet } from "./utils/GridCoord"
+import type { GridCoord } from "./utils/GridCoord"
 
 import styles from "./Game.module.css"
 
@@ -84,7 +84,7 @@ export default function Game(props: {
   y: number //down
   mines: number
   sensitivity?: number // milliseconds, move this to user context
-  setFlags?: Setter<number>
+  setMines?: Setter<number>
 }) {
   let gridRef: HTMLDivElement //HTMLGameElement
 
@@ -92,7 +92,7 @@ export default function Game(props: {
   on(
     () => [props.x, props.y, props.mines],
     () => {
-      throw Error("Game properties should be static for life of component")
+      throw Error("Game properties should be static for life of the component")
     }
   )
 
@@ -100,7 +100,11 @@ export default function Game(props: {
   const [cells, setCells] = createSignal<boolean[][]>(
       Array(props.y).fill(Array(props.x).fill(false))
     ),
-    isPlayed = ([i, j]: GridCoord) => cells()?.[i][j],
+    isPlayed = ([i, j]: GridCoord) => cells()[i][j],
+    setCellPlayed = (cells: boolean[][], [i, j]: GridCoord) =>
+      cells.map((row, y) =>
+        y !== i ? row : row.map((cell, x) => (x !== j ? cell : true))
+      ),
     getNeighbors = (coord: GridCoord): GridCoord[] =>
       Array.from(
         // look Mom, a generator!
@@ -121,37 +125,27 @@ export default function Game(props: {
       )
 
   // pertaining to flags
-  const toggleFlag = (cell: GridCoord | Element) =>
-      props.setFlags?.((count) =>
-        (cell instanceof Element
-          ? cell
-          : (gridRef.childNodes[cell[0]].childNodes[cell[1]] as Element)
-        ).classList.toggle(flagClass)
-          ? --count
-          : ++count
+  const gridElement = (cell: EventTarget | ChildNode | GridCoord) => {
+      if (cell instanceof Array)
+        return gridRef.childNodes[cell[0]].childNodes[cell[1]] as HTMLDivElement
+      return cell as HTMLDivElement
+    },
+    toggleFlag = (cell: GridCoord | EventTarget) =>
+      props.setMines?.((count) =>
+        gridElement(cell).classList.toggle(flagClass) ? --count : ++count
       ),
-    isFlagged = (cell: GridCoord | Element) =>
-      (cell instanceof Element
-        ? cell
-        : (gridRef.childNodes[cell[0]].childNodes[cell[1]] as Element)
-      ).classList.contains(flagClass),
+    isFlagged = (cell: GridCoord | EventTarget) =>
+      gridElement(cell).classList.contains(flagClass),
     countNeighborFlags = (coord: GridCoord): number =>
-      getNeighbors(coord).filter(([i, j]) =>
-        (
-          gridRef.childNodes[i].childNodes[j] as HTMLDivElement
-        ).classList.contains(flagClass)
-      ).length
-  onMount(() => {
-    props.setFlags?.(mines.size)
-  })
+      getNeighbors(coord).filter(isFlagged).length
 
   // pertaining to mines
   const mines = new GridCoordSet(
-      Array(Math.floor(props.x * props.y * props.mines) + 1)
+      Array(1 + Math.floor(props.x * props.y * props.mines))
         .fill(true)
         .map(() => {
-          const mine = Math.floor(Math.random() * props.x * props.y)
-          return [Math.floor(mine / props.x), mine % props.x] as GridCoord
+          const random = Math.floor(Math.random() * props.x * props.y)
+          return [Math.floor(random / props.x), random % props.x]
         })
     ),
     checkMine = (coord: GridCoord) => {
@@ -167,64 +161,39 @@ export default function Game(props: {
       getNeighbors(coord).filter((neighbor) => mines.has(neighbor)).length
 
   // pertaining to play
-  function playCell(coord: GridCoord, element: Element) {
-    if (isFlagged(element) || isPlayed(coord) || checkMine(coord)) {
+  function playCell(coord: GridCoord, element?: EventTarget) {
+    if (isFlagged(element ?? coord) || isPlayed(coord) || checkMine(coord))
       return
-    }
 
-    setCells((cells) => {
-      const [i, j] = coord
-      return cells.map((row, y) =>
-        y == i ? row.map((cell, x) => (x == j ? true : cell)) : row
-      )
-    })
-
+    setCells((cells) => setCellPlayed(cells, coord))
     if (!countNeighborMines(coord)) {
       playNeighborCells(coord)
     }
   }
 
-  function playNeighborCells(start: GridCoord): GridCoordSet | undefined {
-    const playedCells = new GridCoordSet(),
-      search = [getNeighbors(start)]
+  function playNeighborCells(coord: GridCoord) {
+    const played = new GridCoordSet(),
+      neighbors = new GridCoordSet(getNeighbors(coord))
+    for (const neighbor of neighbors) {
+      if (isFlagged(neighbor) || isPlayed(neighbor)) continue
+      if (checkMine(neighbor)) return
 
-    let radius = 1
-    do {
-      const nextSearch = new GridCoordSet()
-      for (const cell of search.shift()!) {
-        if (!isFlagged(cell) && !isPlayed(cell)) {
-          if (checkMine(cell)) {
-            return
-          }
-
-          playedCells.add(cell)
-
-          if (!countNeighborMines(cell)) {
-            getNeighbors(cell)
-              .filter(
-                (neighbor) =>
-                  !isFlagged(cell) &&
-                  !isPlayed(cell) &&
-                  !playedCells.has(neighbor)
-              )
-              .forEach((neighbor) => {
-                nextSearch.add(neighbor)
-              })
-          }
-        }
+      played.add(neighbor)
+      if (!countNeighborMines(neighbor)) {
+        getNeighbors(neighbor)
+          .filter(
+            (neighbor) =>
+              !isFlagged(neighbor) &&
+              !isPlayed(neighbor) &&
+              !played.has(neighbor)
+          )
+          .forEach((neighbor) => {
+            neighbors.add(neighbor)
+          })
       }
+    }
 
-      ++radius, search.push(Array.from(nextSearch.values()))
-    } while (search[0].length)
-
-    setCells((played) => {
-      for (const [i, j] of playedCells) {
-        played = played.map((row, y) =>
-          y !== i ? row : row.map((cell, x) => (x !== j ? cell : true))
-        )
-      }
-      return played
-    })
+    setCells((cells) => Array.from(played).reduce(setCellPlayed, cells))
   }
 
   // pertaining to end-of-game
@@ -243,66 +212,86 @@ export default function Game(props: {
   })
 
   // pertaining to UI
-  function UnplayedCell({ i, j }: { i: number; j: number }) {
-    function handler([i, j]: GridCoord, event: MouseEvent): void {
-      // short-click plays non-flagged or removes flag, long-click only sets flag
-      // the click handler or the set flag timeout needs to cleanup the other
-      const eventTarget = event.target as Element
-      if (isFlagged(eventTarget)) {
-        toggleFlag(eventTarget)
-        return
-      }
+  onMount(() => {
+    props.setMines?.(mines.size)
+  })
 
-      const setFlagTimeout = setTimeout(() => {
-          eventTarget.removeEventListener("click", doPlayCell)
+  function Cell(cellProps: { coord: GridCoord }) {
+    function Unplayed() {
+      function handler(
+        coord: GridCoord,
+        { target: eventTarget }: MouseEvent
+      ): void {
+        if (!eventTarget) return // avert non-null type assertions
+
+        // remove flag if flagged
+        if (isFlagged(eventTarget)) {
           toggleFlag(eventTarget)
-        }, props.sensitivity ?? 200),
-        doPlayCell = () => {
-          clearTimeout(setFlagTimeout)
-
-          batch(() => {
-            playCell([i, j], eventTarget)
-          })
-
-          eventTarget.removeEventListener("click", doPlayCell)
+          return
         }
 
-      eventTarget.addEventListener("click", doPlayCell)
-    }
+        // set flag if long-click
+        const setFlagTimeout = setTimeout(() => {
+          eventTarget.removeEventListener("click", doPlayCell)
 
-    return (
-      <div
-        onMouseDown={[handler, [i, j]]}
-        class={`${styles.GameCell} ${styles.hidden}`}
-      />
-    )
-  }
+          toggleFlag(eventTarget)
+        }, props.sensitivity ?? 200)
 
-  function PlayedCell({ i, j }: { i: number; j: number }) {
-    function handler(cell: GridCoord, event: MouseEvent): void {
-      if (countNeighborMines(cell) != countNeighborFlags(cell)) {
-        return
+        // play cell if click event (mouseup after mousedown) comes before long-click timeout
+        const doPlayCell = () => {
+          clearTimeout(setFlagTimeout)
+          eventTarget.removeEventListener("click", doPlayCell)
+
+          batch(() => {
+            playCell(coord, eventTarget)
+          })
+        }
+        eventTarget.addEventListener("click", doPlayCell)
       }
 
-      batch(() => {
-        playNeighborCells(cell)
-      })
+      return (
+        <div
+          onMouseDown={[handler, cellProps.coord]}
+          class={`${styles.GameCell} ${styles.hidden}`}
+        />
+      )
+    }
+
+    function Played() {
+      function handler(coord: GridCoord, event: MouseEvent): void {
+        if (countNeighborMines(coord) != countNeighborFlags(coord)) {
+          return
+        }
+
+        batch(() => {
+          playNeighborCells(coord)
+        })
+      }
+
+      return (
+        <div
+          onClick={[handler, cellProps.coord]}
+          class={`${styles.GameCell} ${
+            styles[`neighbors_${countNeighborMines(cellProps.coord)}`]
+          }`}
+          classList={{
+            ...(gameOver() && {
+              [styles.mine]: mines.has(cellProps.coord),
+            }),
+          }}
+        >
+          {countNeighborMines(cellProps.coord) || ""}
+        </div>
+      )
     }
 
     return (
-      <div
-        onClick={[handler, [i, j]]}
-        class={`${styles.GameCell} ${
-          styles[`neighbors_${countNeighborMines([i, j])}`]
-        }`}
-        classList={{
-          ...(gameOver() && {
-            [styles.mine]: mines.has([i, j]),
-          }),
-        }}
+      <Show
+        when={isPlayed(cellProps.coord) || gameOver()}
+        fallback={<Unplayed />}
       >
-        {countNeighborMines([i, j]) || ""}
-      </div>
+        <Played />
+      </Show>
     )
   }
 
@@ -311,16 +300,7 @@ export default function Game(props: {
       <Index each={cells()} fallback={<div>Loading...</div>}>
         {(row, i) => (
           <div class={styles.GameRow}>
-            <Index each={row()}>
-              {(_, j) => (
-                <Show
-                  when={cells()?.[i][j] || gameOver()}
-                  fallback={<UnplayedCell i={i} j={j} />}
-                >
-                  <PlayedCell i={i} j={j} />
-                </Show>
-              )}
-            </Index>
+            <Index each={row()}>{(_false, j) => <Cell coord={[i, j]} />}</Index>
           </div>
         )}
       </Index>
