@@ -6,26 +6,38 @@ import {
   on,
   onMount,
   Show,
+  type JSX
 } from "solid-js"
-import type { Setter } from "solid-js"
 
-import { GridCoordSet } from "./utils/GridCoord"
-import type { GridCoord } from "./utils/GridCoord"
+import { GridCoordSet, type GridCoord } from "./utils/GridCoord"
 
 import styles from "./Game.module.css"
 
 const flagClass = styles.flag
 
-// define a custom event emitted from the component
+// define custom events emitted from the component
 const GAME_OVER_EVENT_TYPE = "Game-Over"
 export class GameOverEvent extends CustomEvent<{ won: boolean }> {
   type!: "Game-Over"
   detail!: { won: boolean }
-  constructor(won: boolean) {
+  constructor({ won }: { won: boolean }) {
     super(GAME_OVER_EVENT_TYPE, {
       bubbles: true, // simply set on:Game-Over attribute (or addEventListener) on a containing DOM element
       composed: true, // cross shadow-DOM boundary
       detail: { won },
+    })
+  }
+}
+
+const GAME_FLAG_EVENT_TYPE = "Game-Flag-Update"
+export class GameFlagEvent extends CustomEvent<{ flags: number }> {
+  type!: "Game-Flag-Update"
+  detail!: { flags: number }
+  constructor({ flags }: { flags: number }) {
+    super(GAME_FLAG_EVENT_TYPE, {
+      bubbles: true, // simply set on:Game-Over attribute (or addEventListener) on a containing DOM element
+      composed: true, // cross shadow-DOM boundary
+      detail: { flags },
     })
   }
 }
@@ -35,9 +47,13 @@ declare module "solid-js" {
   namespace JSX {
     interface CustomEvents {
       GAME_OVER_EVENT_TYPE: GameOverEvent
+      GAME_FLAG_EVENT_TYPE: GameFlagEvent
     }
   }
 }
+
+// show a property on the custom element
+export type HTMLGameElement = HTMLDivElement & { flags: number }
 
 // many modes of play regarding first click and mouse operations
 // I recall versions where the board first appears with an opened empty space,
@@ -79,14 +95,16 @@ declare module "solid-js" {
 //
 // I've injected a state-modifier
 // I've exported a custom event
-export default function Game(props: {
-  x: number //across
-  y: number //down
-  mines: number
-  sensitivity?: number // milliseconds, move this to user context
-  setMines?: Setter<number> // probably should be emitting an event
-}) {
-  let gridRef: HTMLDivElement //HTMLGameElement
+export default function Game(
+  props: {
+    [x: string]: any
+    x: number //across
+    y: number //down
+    mines: number
+    sensitivity?: number // milliseconds, TODO: move this to user context
+  } & JSX.IntrinsicAttributes
+) {
+  let gameRef: HTMLGameElement
 
   // these props should not change during game, container should instead dispose and re-render this component
   on(
@@ -125,17 +143,18 @@ export default function Game(props: {
       )
 
   // pertaining to flags
-  const getGridElement = (cell: EventTarget | ChildNode | GridCoord) => {
-      if (!(cell instanceof Array)) {
-        return cell as HTMLDivElement
+  const getGridElement = (cell: EventTarget | GridCoord) => {
+      if (cell instanceof Array) {
+        const [i, j] = cell
+        return gameRef.childNodes[i].childNodes[j] as HTMLElement
       }
-    
-      const [i, j] = cell
-      return gridRef.childNodes[i].childNodes[j] as HTMLDivElement
+
+      return cell as HTMLElement
     },
     toggleFlag = (cell: GridCoord | EventTarget) => {
       const flagged = getGridElement(cell).classList.toggle(flagClass)
-      props.setMines?.((count) => (flagged ? --count : ++count))
+      flagged ? --gameRef.flags : ++gameRef.flags
+      gameRef.dispatchEvent(new GameFlagEvent({ flags: gameRef.flags }))
     },
     isFlagged = (cell: GridCoord | EventTarget) =>
       getGridElement(cell).classList.contains(flagClass),
@@ -154,7 +173,7 @@ export default function Game(props: {
     checkMine = (coord: GridCoord) => {
       if (mines.has(coord)) {
         setGameOver(true)
-        gridRef.dispatchEvent(new GameOverEvent(false))
+        gameRef.dispatchEvent(new GameOverEvent({ won: false }))
         return true
       }
 
@@ -200,7 +219,7 @@ export default function Game(props: {
   }
 
   // pertaining to end-of-game
-  const [gameOver, setGameOver] = createSignal<boolean | null>(null)
+  const [gameOver, setGameOver] = createSignal<boolean>(false)
   createEffect(() => {
     if (
       mines.size +
@@ -210,13 +229,15 @@ export default function Game(props: {
         ) ==
       props.x * props.y
     ) {
-      gridRef.dispatchEvent(new GameOverEvent(true))
+      gameRef.dispatchEvent(new GameOverEvent({ won: true }))
     }
   })
 
-  // pertaining to UI
+  // initialize property on our reference
   onMount(() => {
-    props.setMines?.(mines.size)
+    (props.ref as ((e: unknown) => void))?.(gameRef)  // the props proxy object presents the ref property as a Setter function
+    gameRef.flags = mines.size
+    gameRef.dispatchEvent(new GameFlagEvent({ flags: gameRef.flags }))
   })
 
   function Cell(cellProps: { coord: GridCoord }) {
@@ -299,7 +320,7 @@ export default function Game(props: {
   }
 
   return (
-    <div ref={gridRef!} class={styles.GameGrid}>
+    <div ref={gameRef!} class={styles.GameGrid}>
       <Index each={Array(props.y).fill(false)}>
         {(_, i) => (
           <div class={styles.GameRow}>
