@@ -1,4 +1,5 @@
-import GridCoordSet, { GridCoord } from "./GridCoord.js"
+import { GridCoordSet } from "./GridCoord.js"
+import type { GridCoord } from "./GridCoord.js"
 
 const props = { x: 22, y: 44, mines: 0.1 }
 
@@ -23,6 +24,7 @@ for (const x of set2.values()) {
 for (const [i,j] of set2) {
   console.info([i,j])
 }
+
 // set2.clear()
 // for (const x of set2.values()) {
 //   console.info(x)

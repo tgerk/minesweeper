@@ -30,7 +30,7 @@ export class GameOverEvent extends CustomEvent<{ won: boolean }> {
   }
 }
 
-// setup event handler attribute on:GameOver --FOR STANDARD HTML ELEMENTS
+// extend JSX.CustomEvents interface, defines on:Game-Over attribute FOR STANDARD HTML ELEMENTS
 declare module "solid-js" {
   namespace JSX {
     interface CustomEvents {
@@ -84,11 +84,11 @@ export default function Game(props: {
   y: number //down
   mines: number
   sensitivity?: number // milliseconds, move this to user context
-  setMines?: Setter<number>
+  setMines?: Setter<number> // probably should be emitting an event
 }) {
   let gridRef: HTMLDivElement //HTMLGameElement
 
-  // pre-empt "bad things" if properties are changed, container should render a new Game component
+  // these props should not change during game, container should instead dispose and re-render this component
   on(
     () => [props.x, props.y, props.mines],
     () => {
@@ -101,7 +101,7 @@ export default function Game(props: {
       Array(props.y).fill(Array(props.x).fill(false))
     ),
     isPlayed = ([i, j]: GridCoord) => cells()[i][j],
-    setCellPlayed = (cells: boolean[][], [i, j]: GridCoord) =>
+    setPlayed = (cells: boolean[][], [i, j]: GridCoord) =>
       cells.map((row, y) =>
         y !== i ? row : row.map((cell, x) => (x !== j ? cell : true))
       ),
@@ -125,17 +125,20 @@ export default function Game(props: {
       )
 
   // pertaining to flags
-  const gridElement = (cell: EventTarget | ChildNode | GridCoord) => {
-      if (cell instanceof Array)
-        return gridRef.childNodes[cell[0]].childNodes[cell[1]] as HTMLDivElement
-      return cell as HTMLDivElement
+  const getGridElement = (cell: EventTarget | ChildNode | GridCoord) => {
+      if (!(cell instanceof Array)) {
+        return cell as HTMLDivElement
+      }
+    
+      const [i, j] = cell
+      return gridRef.childNodes[i].childNodes[j] as HTMLDivElement
     },
-    toggleFlag = (cell: GridCoord | EventTarget) =>
-      props.setMines?.((count) =>
-        gridElement(cell).classList.toggle(flagClass) ? --count : ++count
-      ),
+    toggleFlag = (cell: GridCoord | EventTarget) => {
+      const flagged = getGridElement(cell).classList.toggle(flagClass)
+      props.setMines?.((count) => (flagged ? --count : ++count))
+    },
     isFlagged = (cell: GridCoord | EventTarget) =>
-      gridElement(cell).classList.contains(flagClass),
+      getGridElement(cell).classList.contains(flagClass),
     countNeighborFlags = (coord: GridCoord): number =>
       getNeighbors(coord).filter(isFlagged).length
 
@@ -165,7 +168,7 @@ export default function Game(props: {
     if (isFlagged(element ?? coord) || isPlayed(coord) || checkMine(coord))
       return
 
-    setCells((cells) => setCellPlayed(cells, coord))
+    setCells((cells) => setPlayed(cells, coord))
     if (!countNeighborMines(coord)) {
       playNeighborCells(coord)
     }
@@ -193,7 +196,7 @@ export default function Game(props: {
       }
     }
 
-    setCells((cells) => Array.from(played).reduce(setCellPlayed, cells))
+    setCells((cells) => Array.from(played).reduce(setPlayed, cells))
   }
 
   // pertaining to end-of-game
@@ -297,10 +300,12 @@ export default function Game(props: {
 
   return (
     <div ref={gridRef!} class={styles.GameGrid}>
-      <Index each={cells()} fallback={<div>Loading...</div>}>
-        {(row, i) => (
+      <Index each={Array(props.y).fill(false)}>
+        {(_, i) => (
           <div class={styles.GameRow}>
-            <Index each={row()}>{(_false, j) => <Cell coord={[i, j]} />}</Index>
+            <Index each={Array(props.x).fill(false)}>
+              {(_, j) => <Cell coord={[i, j]} />}
+            </Index>
           </div>
         )}
       </Index>

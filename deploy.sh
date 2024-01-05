@@ -20,3 +20,5 @@ git commit -m 'deploy'
 # git push -f git@github.com:tgerk/tgerk.github.io.git main
 git push -f git@github.com:tgerk/minesweeper.git main:gh-pages
 
+# would like some connection from version-tagged main-branch commit
+#  to orphan commits on gh-pages branch
